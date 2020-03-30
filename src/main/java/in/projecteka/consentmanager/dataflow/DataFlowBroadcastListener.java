@@ -17,6 +17,9 @@ import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.PostConstruct;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 import static in.projecteka.consentmanager.ConsentManagerConfiguration.HIP_DATA_FLOW_REQUEST_QUEUE;
 import static in.projecteka.consentmanager.clients.ClientError.queueNotFound;
@@ -50,14 +53,19 @@ public class DataFlowBroadcastListener {
                         (DataFlowRequestMessage) converter.fromMessage(message);
                 logger.info("Received message for Request id : " + dataFlowRequestMessage
                         .getTransactionId());
-                DataFlowRequest dataFlowRequest = DataFlowRequest.builder()
-                        .transactionId(dataFlowRequestMessage.getTransactionId())
-                        .callBackUrl(dataFlowRequestMessage.getDataFlowRequest().getCallBackUrl())
-                        .consent(dataFlowRequestMessage.getDataFlowRequest().getConsent())
-                        .hiDataRange(dataFlowRequestMessage.getDataFlowRequest().getHiDataRange())
-                        .keyMaterial(dataFlowRequestMessage.getDataFlowRequest().getKeyMaterial())
-                        .build();
-                configureAndSendDataRequestFor(dataFlowRequest);
+                String consentArtefactId = dataFlowRequestMessage.getDataFlowRequest().getConsent().getId();
+                if (consentNotExpired(consentArtefactId)) {
+                    DataFlowRequest dataFlowRequest = DataFlowRequest.builder()
+                            .transactionId(dataFlowRequestMessage.getTransactionId())
+                            .callBackUrl(dataFlowRequestMessage.getDataFlowRequest().getCallBackUrl())
+                            .consent(dataFlowRequestMessage.getDataFlowRequest().getConsent())
+                            .hiDataRange(dataFlowRequestMessage.getDataFlowRequest().getHiDataRange())
+                            .keyMaterial(dataFlowRequestMessage.getDataFlowRequest().getKeyMaterial())
+                            .build();
+                    configureAndSendDataRequestFor(dataFlowRequest);
+                } else {
+                    logger.info("Consent expired for consent artefact id: " + consentArtefactId);
+                }
             } catch (Exception e) {
                 logger.error(e);
                 throw new AmqpRejectAndDontRequeueException(e);
@@ -66,6 +74,33 @@ public class DataFlowBroadcastListener {
         mlc.setupMessageListener(messageListener);
         mlc.start();
     }
+
+    private boolean consentNotExpired(String consentArtefactId) {
+        String consentExpiry = dataFlowRequestRepository.getConsentExpiryDateFor(consentArtefactId).block();
+        return !hasConsentArtefactExpired(consentExpiry);
+    }
+
+    private boolean hasConsentArtefactExpired(String dataExpiryAt) {
+        Date expiryDate = convertToDate(dataExpiryAt);
+        Date today = new Date();
+
+        if (expiryDate.after(today) || expiryDate.equals(today)) return false;
+
+        return true;
+    }
+
+    private Date convertToDate(String dateExpiryAt) {
+        long timeInMillis = Long.parseLong(dateExpiryAt);
+        Date date = new Date(timeInMillis);
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
+            return sdf.parse(sdf.format(date));
+        } catch (ParseException e) {
+            logger.error(e);
+        }
+        return date;
+    }
+
 
     public void configureAndSendDataRequestFor(DataFlowRequest dataFlowRequest) {
         dataFlowRequestRepository.getHipIdFor(dataFlowRequest.getConsent().getId())

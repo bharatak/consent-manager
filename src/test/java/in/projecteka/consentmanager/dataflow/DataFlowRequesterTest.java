@@ -2,11 +2,7 @@ package in.projecteka.consentmanager.dataflow;
 
 import in.projecteka.consentmanager.clients.ClientError;
 import in.projecteka.consentmanager.clients.ConsentManagerClient;
-import in.projecteka.consentmanager.dataflow.model.AccessPeriod;
-import in.projecteka.consentmanager.dataflow.model.ConsentArtefactRepresentation;
-import in.projecteka.consentmanager.dataflow.model.ConsentStatus;
-import in.projecteka.consentmanager.dataflow.model.HIDataRange;
-import in.projecteka.consentmanager.dataflow.model.HIUReference;
+import in.projecteka.consentmanager.dataflow.model.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -52,6 +48,7 @@ public class DataFlowRequesterTest {
         ConsentArtefactRepresentation consentArtefactRepresentation = consentArtefactRepresentation().build();
         consentArtefactRepresentation.setStatus(ConsentStatus.GRANTED);
         consentArtefactRepresentation.getConsentDetail().setHiu(HIUReference.builder().id(hiuId).name("MAX").build());
+        consentArtefactRepresentation.getConsentDetail().getPermission().setDataExpiryAt(toDate("9999-01-15T08:47:48Z"));
         consentArtefactRepresentation.getConsentDetail().getPermission().
                 setDateRange(AccessPeriod.builder()
                         .fromDate(toDate("2020-01-15T08:47:48Z"))

@@ -6,26 +6,15 @@ import in.projecteka.consentmanager.clients.UserServiceClient;
 import in.projecteka.consentmanager.clients.model.Error;
 import in.projecteka.consentmanager.clients.model.ErrorRepresentation;
 import in.projecteka.consentmanager.common.CentralRegistry;
-import in.projecteka.consentmanager.consent.model.ConsentArtefact;
-import in.projecteka.consentmanager.consent.model.ConsentArtefactsMessage;
-import in.projecteka.consentmanager.consent.model.ConsentRepresentation;
-import in.projecteka.consentmanager.consent.model.ConsentRequest;
-import in.projecteka.consentmanager.consent.model.ConsentRequestDetail;
-import in.projecteka.consentmanager.consent.model.ConsentStatus;
-import in.projecteka.consentmanager.consent.model.GrantedContext;
-import in.projecteka.consentmanager.consent.model.HIPConsentArtefact;
-import in.projecteka.consentmanager.consent.model.HIPConsentArtefactRepresentation;
-import in.projecteka.consentmanager.consent.model.PatientReference;
-import in.projecteka.consentmanager.consent.model.RevokeRequest;
+import in.projecteka.consentmanager.consent.model.*;
 import in.projecteka.consentmanager.consent.model.request.GrantedConsent;
 import in.projecteka.consentmanager.consent.model.request.RequestedDetail;
-import in.projecteka.consentmanager.consent.model.response.ConsentApprovalResponse;
-import in.projecteka.consentmanager.consent.model.response.ConsentArtefactLight;
-import in.projecteka.consentmanager.consent.model.response.ConsentArtefactLightRepresentation;
-import in.projecteka.consentmanager.consent.model.response.ConsentArtefactRepresentation;
-import in.projecteka.consentmanager.consent.model.response.ConsentReference;
+import in.projecteka.consentmanager.consent.model.response.*;
 import lombok.AllArgsConstructor;
 import lombok.SneakyThrows;
+import org.apache.log4j.Logger;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -35,29 +24,18 @@ import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.Signature;
 import java.security.SignedObject;
-import java.util.Base64;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
-import static in.projecteka.consentmanager.clients.model.ErrorCode.CONSENT_REQUEST_NOT_FOUND;
-import static in.projecteka.consentmanager.clients.model.ErrorCode.INVALID_STATE;
-import static in.projecteka.consentmanager.clients.model.ErrorCode.USER_NOT_FOUND;
-import static in.projecteka.consentmanager.consent.model.ConsentStatus.DENIED;
-import static in.projecteka.consentmanager.consent.model.ConsentStatus.GRANTED;
-import static in.projecteka.consentmanager.consent.model.ConsentStatus.REQUESTED;
-import static in.projecteka.consentmanager.consent.model.ConsentStatus.REVOKED;
+import static in.projecteka.consentmanager.clients.model.ErrorCode.*;
+import static in.projecteka.consentmanager.consent.model.ConsentStatus.*;
 import static java.lang.String.format;
-import static org.springframework.http.HttpStatus.BAD_REQUEST;
-import static org.springframework.http.HttpStatus.CONFLICT;
-import static org.springframework.http.HttpStatus.FORBIDDEN;
-import static org.springframework.http.HttpStatus.NOT_FOUND;
+import static org.springframework.http.HttpStatus.*;
 
 @AllArgsConstructor
 public class ConsentManager {
     public static final String SHA_1_WITH_RSA = "SHA1withRSA";
+    private static final Logger logger = Logger.getLogger(ConsentManager.class);
     private final UserServiceClient userServiceClient;
     private final ConsentRequestRepository consentRequestRepository;
     private final ConsentArtefactRepository consentArtefactRepository;
@@ -66,6 +44,32 @@ public class ConsentManager {
     private final CentralRegistry centralRegistry;
     private final PostConsentRequest postConsentRequest;
     private final PatientServiceClient patientServiceClient;
+
+    @Scheduled(cron = "${cron.expression}")
+    @Async
+    public void processExpiredConsents() {
+        logger.info("Processing consent expiries asynchronously. "
+                + Thread.currentThread().getName());
+        List<ConsentExpiry> consentExpiries = consentArtefactRepository.getConsentArtefacts(GRANTED).collectList().block();
+        if (consentExpiries != null) {
+            consentExpiries.forEach(consentExpiry -> {
+                if (isConsentExpired(consentExpiry.getConsentExpiryDate())) {
+                    ConsentRepresentation consentRepresentation = getConsentRepresentation(consentExpiry.getConsentId(), consentExpiry.getPatientId()).block();
+                    if (consentRepresentation != null) {
+                        ConsentRequestDetail consentRequestDetail = consentRequestRepository.requestOf(
+                                consentRepresentation.getConsentRequestId(),
+                                GRANTED.toString(),
+                                consentRepresentation.getConsentDetail().getPatient().getId()).block();
+                        updateAndBroadcastConsentExpiry(
+                                consentExpiry.getConsentId(),
+                                consentExpiry.getPatientId(),
+                                consentRepresentation,
+                                consentRequestDetail);
+                    }
+                }
+            });
+        }
+    }
 
     private static boolean isNotSameRequester(ConsentArtefact consentDetail, String requesterId) {
         return !consentDetail.getHiu().getId().equals(requesterId) &&
@@ -322,6 +326,24 @@ public class ConsentManager {
                 .switchIfEmpty(Mono.error(ClientError.consentArtefactForbidden()));
     }
 
+    private boolean isConsentExpired(Date dateExpiryAt) {
+        Date now = new Date();
+        return (!(dateExpiryAt.after(now) || dateExpiryAt.equals(now)));
+    }
+
+    private void updateAndBroadcastConsentExpiry(String consentId, String requesterId, ConsentRepresentation consentRepresentation, ConsentRequestDetail consentRequestDetail) {
+        consentArtefactRepository.updateConsentArtefactStatus(consentId, EXPIRED).block();
+        List<HIPConsentArtefactRepresentation> hipConsentArtefactRepresentations = getHIPConsentArtefacts(consentRepresentation);
+        if (hipConsentArtefactRepresentations != null) {
+            hipConsentArtefactRepresentations.forEach(hipConsentArtefactRepresentation ->
+                    broadcastConsentArtefacts(hipConsentArtefactRepresentations,
+                            consentRequestDetail.getCallBackUrl(),
+                            consentRepresentation.getConsentRequestId(),
+                            EXPIRED,
+                            consentRepresentation.getDateModified()).block());
+        }
+    }
+
     public Mono<ConsentRepresentation> getConsentRepresentation(String consentId, String requesterId) {
         return getConsentWithRequest(consentId)
                 .filter(consentRepresentation -> !isNotSameRequester(consentRepresentation.getConsentDetail(), requesterId))
@@ -346,6 +368,13 @@ public class ConsentManager {
                         .map(consentRepresentation ->
                                 from(consentRepresentation.getConsentDetail(), REVOKED)))
                 .collectList();
+    }
+
+    public List<HIPConsentArtefactRepresentation> getHIPConsentArtefacts(ConsentRepresentation consentRepresentation) {
+        List<HIPConsentArtefactRepresentation> hipList = new ArrayList<>();
+        hipList.add(from(consentRepresentation.getConsentDetail(), EXPIRED));
+
+        return hipList;
     }
 
     public Mono<Void> revoke(RevokeRequest revokeRequest, String requesterId) {

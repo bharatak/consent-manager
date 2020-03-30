@@ -34,21 +34,16 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static in.projecteka.consentmanager.consent.TestBuilders.OBJECT_MAPPER;
-import static in.projecteka.consentmanager.consent.TestBuilders.consentArtefactRepresentation;
-import static in.projecteka.consentmanager.consent.TestBuilders.consentRepresentation;
-import static in.projecteka.consentmanager.consent.TestBuilders.consentRequestDetail;
-import static in.projecteka.consentmanager.consent.TestBuilders.string;
+import static in.projecteka.consentmanager.consent.TestBuilders.*;
+import static in.projecteka.consentmanager.dataflow.Utils.toDate;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(SpringExtension.class)
 @AutoConfigureWebTestClient
@@ -111,11 +106,13 @@ public class ConsentArtefactUserJourneyTest {
     }
 
     @Test
-    public void shouldListConsentArtifacts() {
+    public void shouldListConsentArtifacts() throws ParseException {
         var consentArtefact = consentArtefactRepresentation().build();
         var token = string();
         var patientId = consentArtefact.getConsentDetail().getPatient().getId();
         var consentRequestId = "request-id";
+        consentArtefact.getConsentDetail().getPermission().setDataExpiryAt(toDate("9999-01-15T08:47:48Z"));
+
         when(authenticator.verify(token)).thenReturn(Mono.just(new Caller(patientId, false)));
         when(consentArtefactRepository.getConsentArtefacts(eq(consentRequestId)))
                 .thenReturn(Flux.just(consentArtefact.getConsentDetail().getConsentId()));
@@ -140,11 +137,12 @@ public class ConsentArtefactUserJourneyTest {
         var token = string();
         var consentArtefact = consentArtefactRepresentation().build();
         var patientId = consentArtefact.getConsentDetail().getPatient().getId();
-        when(authenticator.verify(token)).thenReturn(Mono.just(new Caller(patientId, false)));
         var errorResponse = new ErrorRepresentation(new Error(ErrorCode.CONSENT_ARTEFACT_NOT_FOUND, "Cannot find the " +
                 "consent artefact"));
         var errorResponseJson = OBJECT_MAPPER.writeValueAsString(errorResponse);
         var consentRequestId = "request-id";
+
+        when(authenticator.verify(token)).thenReturn(Mono.just(new Caller(patientId, false)));
         when(consentArtefactRepository.getConsentArtefacts(eq(consentRequestId)))
                 .thenReturn(Flux.empty());
         when(consentArtefactRepository.getConsentArtefact(eq(consentArtefact.getConsentDetail().getConsentId())))
@@ -164,12 +162,13 @@ public class ConsentArtefactUserJourneyTest {
     public void shouldThrowInvalidRequester() throws JsonProcessingException {
         var token = string();
         var anotherUser = string();
-        when(authenticator.verify(token)).thenReturn(Mono.just(new Caller(anotherUser, false)));
         var consentArtefact = consentArtefactRepresentation().build();
         var errorResponse = new ErrorRepresentation(new Error(ErrorCode.CONSENT_ARTEFACT_FORBIDDEN,
                 "Cannot retrieve Consent artefact. Forbidden"));
         var errorResponseJson = OBJECT_MAPPER.writeValueAsString(errorResponse);
         var consentRequestId = "request-id";
+
+        when(authenticator.verify(token)).thenReturn(Mono.just(new Caller(anotherUser, false)));
         when(consentArtefactRepository.getConsentArtefacts(eq(consentRequestId)))
                 .thenReturn(Flux.just(consentArtefact.getConsentDetail().getConsentId()));
         when(consentArtefactRepository.getConsentArtefact(eq(consentArtefact.getConsentDetail().getConsentId())))
@@ -224,14 +223,14 @@ public class ConsentArtefactUserJourneyTest {
     public void shouldNotRevokeConsentArtefactWhenItIsNotInGrantedState() throws JsonProcessingException {
         var token = string();
         var consentRepresentation = consentRepresentation().status(ConsentStatus.REVOKED).build();
+        var errorResponse = new ErrorRepresentation(new Error(ErrorCode.CONSENT_NOT_GRANTED, "Not a granted consent."));
+        var errorResponseJson = OBJECT_MAPPER.writeValueAsString(errorResponse);
         String consentRequestId = consentRepresentation.getConsentRequestId();
         List<String> consentIds = new ArrayList<>();
         String consentId = consentRepresentation.getConsentDetail().getConsentId();
         consentIds.add(consentRepresentation.getConsentDetail().getConsentId());
         RevokeRequest revokeRequest = RevokeRequest.builder().consents(consentIds).build();
         String patientId = consentRepresentation.getConsentDetail().getPatient().getId();
-        var errorResponse = new ErrorRepresentation(new Error(ErrorCode.CONSENT_NOT_GRANTED, "Not a granted consent."));
-        var errorResponseJson = OBJECT_MAPPER.writeValueAsString(errorResponse);
 
         when(pinVerificationTokenService.validateToken(token))
                 .thenReturn(Mono.just(new Caller(patientId, false)));

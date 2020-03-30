@@ -14,6 +14,8 @@ public class DataFlowRequestRepository {
             "hip_id FROM consent_artefact WHERE consent_artefact_id=$1";
     private static final String INSERT_TO_HEALTH_INFO_NOTIFICATION = "INSERT INTO health_info_notification " +
             "(transaction_id, notification_request) VALUES ($1, $2)";
+    private static final String SELECT_CONSENT_ARTEFACT_EXPIRY_DATE = "SELECT consent_artefact -> 'permission' ->> 'dataExpiryAt' as consent_expiry_date " +
+            "FROM consent_artefact WHERE consent_artefact_id=$1";
     private PgPool dbClient;
 
     public DataFlowRequestRepository(PgPool pgPool) {
@@ -52,12 +54,24 @@ public class DataFlowRequestRepository {
         return Mono.create(monoSink ->
                 dbClient.preparedQuery(INSERT_TO_HEALTH_INFO_NOTIFICATION)
                         .execute(Tuple.of(notificationRequest.getTransactionId(), JsonObject.mapFrom(notificationRequest)),
+                                handler -> {
+                                    if (handler.failed()) {
+                                        monoSink.error(new Exception("Failed to insert to data flow notification"));
+                                        return;
+                                    }
+                                    monoSink.success();
+                                }));
+    }
+
+    public Mono<String> getConsentExpiryDateFor(String consentId) {
+        return Mono.create(monoSink -> dbClient.preparedQuery(SELECT_CONSENT_ARTEFACT_EXPIRY_DATE)
+                .execute(Tuple.of(consentId),
                         handler -> {
                             if (handler.failed()) {
-                                monoSink.error(new Exception("Failed to insert to data flow notification"));
+                                monoSink.error(new Exception("Failed to get consent expiry date from consent Id"));
                                 return;
                             }
-                            monoSink.success();
+                            monoSink.success(handler.result().iterator().next().getString(0));
                         }));
     }
 }

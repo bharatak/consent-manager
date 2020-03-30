@@ -12,13 +12,7 @@ import in.projecteka.consentmanager.common.CentralRegistryTokenVerifier;
 import in.projecteka.consentmanager.consent.ConsentRequestNotificationListener;
 import in.projecteka.consentmanager.consent.HipConsentNotificationListener;
 import in.projecteka.consentmanager.consent.HiuConsentNotificationListener;
-import in.projecteka.consentmanager.dataflow.model.AccessPeriod;
-import in.projecteka.consentmanager.dataflow.model.ConsentArtefactRepresentation;
-import in.projecteka.consentmanager.dataflow.model.ConsentStatus;
-import in.projecteka.consentmanager.dataflow.model.DataFlowRequest;
-import in.projecteka.consentmanager.dataflow.model.DataFlowRequestResponse;
-import in.projecteka.consentmanager.dataflow.model.HIDataRange;
-import in.projecteka.consentmanager.dataflow.model.HIUReference;
+import in.projecteka.consentmanager.dataflow.model.*;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.hamcrest.Matchers;
@@ -44,12 +38,7 @@ import java.text.ParseException;
 import java.util.Date;
 import java.util.stream.Stream;
 
-import static in.projecteka.consentmanager.dataflow.TestBuilders.OBJECT_MAPPER;
-import static in.projecteka.consentmanager.dataflow.TestBuilders.consentArtefactRepresentation;
-import static in.projecteka.consentmanager.dataflow.TestBuilders.dataFlowRequest;
-import static in.projecteka.consentmanager.dataflow.TestBuilders.dataFlowRequestMessage;
-import static in.projecteka.consentmanager.dataflow.TestBuilders.provider;
-import static in.projecteka.consentmanager.dataflow.TestBuilders.string;
+import static in.projecteka.consentmanager.dataflow.TestBuilders.*;
 import static in.projecteka.consentmanager.dataflow.Utils.toDate;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -126,6 +115,7 @@ public class DataFlowRequesterUserJourneyTest {
                 .build()).build();
         ConsentArtefactRepresentation consentArtefactRepresentation =
                 consentArtefactRepresentation().status(ConsentStatus.GRANTED).build();
+        consentArtefactRepresentation.getConsentDetail().getPermission().setDataExpiryAt(toDate("9999-01-15T08:47:48Z"));
         consentArtefactRepresentation.getConsentDetail().getPermission().
                 setDateRange(AccessPeriod.builder()
                         .fromDate(toDate("2020-01-15T08:47:48Z"))
