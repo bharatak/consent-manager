@@ -7,7 +7,9 @@ import in.projecteka.consentmanager.clients.ConsentArtefactNotifier;
 import in.projecteka.consentmanager.common.CentralRegistry;
 import in.projecteka.consentmanager.consent.model.HIPConsentArtefactRepresentation;
 import lombok.AllArgsConstructor;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.MessageListener;
 import org.springframework.amqp.rabbit.listener.MessageListenerContainer;
@@ -21,7 +23,7 @@ import static in.projecteka.consentmanager.clients.ClientError.queueNotFound;
 
 @AllArgsConstructor
 public class HipConsentNotificationListener {
-    private static final Logger logger = Logger.getLogger(HiuConsentNotificationListener.class);
+    private static final Logger logger = LoggerFactory.getLogger(HiuConsentNotificationListener.class);
     private MessageListenerContainerFactory messageListenerContainerFactory;
     private DestinationsConfig destinationsConfig;
     private Jackson2JsonMessageConverter converter;
@@ -50,7 +52,7 @@ public class HipConsentNotificationListener {
 
                 sendConsentArtefact(consentArtefact);
             } catch (Exception e) {
-                logger.error(e);
+                logger.error(e.getMessage());
                 throw new AmqpRejectAndDontRequeueException(e);
             }
         };

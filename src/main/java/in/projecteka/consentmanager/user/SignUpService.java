@@ -12,7 +12,9 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.SignatureException;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 import java.util.Date;
 import java.util.HashMap;
@@ -24,7 +26,7 @@ import java.util.function.Function;
 
 public class SignUpService {
 
-    private final static Logger logger = Logger.getLogger(SignUpService.class);
+    private final static Logger logger = LoggerFactory.getLogger(SignUpService.class);
     public final long jwtTokenValidity;
     private final JWTProperties jwtProperties;
     private final LoadingCache<String, Optional<String>> unverifiedSessions;
@@ -51,7 +53,7 @@ public class SignUpService {
             var session = sessionFrom(token);
             return isStillExists(session);
         } catch (ExpiredJwtException | MalformedJwtException | SignatureException | IllegalArgumentException e) {
-            logger.error(e);
+            logger.error(e.getMessage());
             return false;
         }
     }

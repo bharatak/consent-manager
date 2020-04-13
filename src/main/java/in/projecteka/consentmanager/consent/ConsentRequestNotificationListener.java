@@ -13,7 +13,9 @@ import in.projecteka.consentmanager.consent.model.Content;
 import in.projecteka.consentmanager.consent.model.HIType;
 import in.projecteka.consentmanager.consent.model.Notification;
 import lombok.AllArgsConstructor;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.MessageListener;
 import org.springframework.amqp.rabbit.listener.MessageListenerContainer;
@@ -29,7 +31,7 @@ import static in.projecteka.consentmanager.clients.ClientError.queueNotFound;
 
 @AllArgsConstructor
 public class ConsentRequestNotificationListener {
-    private static final Logger logger = Logger.getLogger(ConsentRequestNotificationListener.class);
+    private static final Logger logger = LoggerFactory.getLogger(ConsentRequestNotificationListener.class);
     private MessageListenerContainerFactory messageListenerContainerFactory;
     private DestinationsConfig destinationsConfig;
     private Jackson2JsonMessageConverter converter;
@@ -58,7 +60,7 @@ public class ConsentRequestNotificationListener {
                         .flatMap(this::notifyUserWith)
                         .block();
             } catch (Exception e) {
-                logger.error(e);
+                logger.error(e.getMessage(),e);
                 throw new AmqpRejectAndDontRequeueException(e);
             }
         };
